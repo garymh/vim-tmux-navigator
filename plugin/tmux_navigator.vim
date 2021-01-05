@@ -9,7 +9,13 @@ let g:loaded_tmux_navigator = 1
 
 function! s:VimNavigate(direction)
   try
-    execute 'wincmd ' . a:direction
+    if a:direction == "n"
+      execute 'wincmd w'
+    elseif a:direction == "p"
+      execute 'wincmd W'
+    else
+      execute 'wincmd ' . a:direction
+    endif
   catch
     echohl ErrorMsg | echo 'E11: Invalid in command-line window; <CR> executes, CTRL-C quits: wincmd k' | echohl None
   endtry
@@ -20,6 +26,7 @@ if !get(g:, 'tmux_navigator_no_mappings', 0)
   nnoremap <silent> <c-j> :TmuxNavigateDown<cr>
   nnoremap <silent> <c-k> :TmuxNavigateUp<cr>
   nnoremap <silent> <c-l> :TmuxNavigateRight<cr>
+  nnoremap <silent> <c-o> :TmuxNavigateNext<cr>
   nnoremap <silent> <c-\> :TmuxNavigatePrevious<cr>
 endif
 
@@ -28,6 +35,7 @@ if empty($TMUX)
   command! TmuxNavigateDown call s:VimNavigate('j')
   command! TmuxNavigateUp call s:VimNavigate('k')
   command! TmuxNavigateRight call s:VimNavigate('l')
+  command! TmuxNavigateNext call s:VimNavigate('n')
   command! TmuxNavigatePrevious call s:VimNavigate('p')
   finish
 endif
@@ -36,6 +44,7 @@ command! TmuxNavigateLeft call s:TmuxAwareNavigate('h')
 command! TmuxNavigateDown call s:TmuxAwareNavigate('j')
 command! TmuxNavigateUp call s:TmuxAwareNavigate('k')
 command! TmuxNavigateRight call s:TmuxAwareNavigate('l')
+command! TmuxNavigateNext call s:TmuxAwareNavigate('n')
 command! TmuxNavigatePrevious call s:TmuxAwareNavigate('p')
 
 if !exists("g:tmux_navigator_save_on_switch")
@@ -57,6 +66,14 @@ endfunction
 function! s:TmuxSocket()
   " The socket path is the first value in the comma-separated list of $TMUX.
   return split($TMUX, ',')[0]
+endfunction
+
+function! s:TmuxAtTabEnd(direction, current_window, last_window, total_windows)
+  if (a:direction != 'n' && a:direction != 'p')
+    return a:current_window == a:last_window
+  else
+   return (a:direction == 'p' && a:current_window == 1) || (a:direction == 'n' && a:current_window == a:total_windows)
+ endif
 endfunction
 
 function! s:TmuxCommand(args)
@@ -92,11 +109,11 @@ endfunction
 
 function! s:TmuxAwareNavigate(direction)
   let nr = winnr()
-  let tmux_last_pane = (a:direction == 'p' && s:tmux_is_last_pane)
+  let tmux_last_pane = (a:direction == 'x' && s:tmux_is_last_pane)
   if !tmux_last_pane
     call s:VimNavigate(a:direction)
   endif
-  let at_tab_page_edge = (nr == winnr())
+  let at_tab_page_edge = s:TmuxAtTabEnd(a:direction, nr, winnr(), winnr('$'))
   " Forward the switch panes command to tmux if:
   " a) we're toggling between the last tmux pane;
   " b) we tried switching windows in vim but it didn't have effect.
@@ -112,7 +129,14 @@ function! s:TmuxAwareNavigate(direction)
       catch /^Vim\%((\a\+)\)\=:E141/ " catches the no file name error
       endtry
     endif
-    let args = 'select-pane -t ' . shellescape($TMUX_PANE) . ' -' . tr(a:direction, 'phjkl', 'lLDUR')
+    if a:direction == 'n'
+      let args = 'select-pane -t ' . ':.+'
+    elseif a:direction == 'p'
+      let args = 'select-pane -t ' . ':.-'
+    else
+      let args = 'select-pane -t ' . shellescape($TMUX_PANE) . ' -' . tr(a:direction, 'phjkl', 'lLDUR')
+      echo args
+    endif
     silent call s:TmuxCommand(args)
     if s:NeedsVitalityRedraw()
       redraw!
